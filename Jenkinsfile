@@ -1,3 +1,4 @@
+```groovy
 pipeline {
     agent any
 
@@ -6,6 +7,12 @@ pipeline {
     }
 
     parameters {
+        booleanParam(
+            name: 'PUSH_DOCKER',
+            defaultValue: true,
+            description: 'Build and push Docker image to Docker Hub'
+        )
+
         booleanParam(
             name: 'DEPLOY_DEV',
             defaultValue: true,
@@ -29,12 +36,6 @@ pipeline {
             defaultValue: true,
             description: 'Run deployment verification'
         )
-
-        booleanParam(
-            name: 'PUSH_DOCKER',
-            defaultValue: true,
-            description: 'Build and push Docker image to Docker Hub'
-        )
     }
 
     environment {
@@ -43,13 +44,13 @@ pipeline {
 
     stages {
 
-        /*
-         * =========================================================
-         * 1. CHECKOUT
-         * =========================================================
-         */
+        // ==========================================
+        // CHECKOUT
+        // ==========================================
+
         stage('Checkout') {
             steps {
+
                 echo "======================================"
                 echo "        CHECKOUT STARTED"
                 echo "======================================"
@@ -74,13 +75,13 @@ pipeline {
         }
 
 
-        /*
-         * =========================================================
-         * 2. BUILD
-         * =========================================================
-         */
+        // ==========================================
+        // BUILD
+        // ==========================================
+
         stage('Build') {
             steps {
+
                 echo "======================================"
                 echo "          BUILD STARTED"
                 echo "======================================"
@@ -103,150 +104,10 @@ pipeline {
         }
 
 
-        /*
-         * =========================================================
-         * 3. DEPLOY
-         * =========================================================
-         */
-        stage('Deploy') {
-            parallel {
+        // ==========================================
+        // DOCKER BUILD & PUSH
+        // ==========================================
 
-                /*
-                 * -------------------------
-                 * DEV
-                 * -------------------------
-                 */
-                stage('Deploy DEV') {
-
-                    when {
-                        expression {
-                            return params.DEPLOY_DEV
-                        }
-                    }
-
-                    steps {
-                        sh '''
-                            set -e
-
-                            echo "======================================"
-                            echo "       DEV DEPLOYMENT STARTED"
-                            echo "======================================"
-
-                            ./deploy/deploy-dev.sh
-
-                            echo "======================================"
-                            echo "       DEV DEPLOYMENT COMPLETED"
-                            echo "======================================"
-                        '''
-                    }
-                }
-
-
-                /*
-                 * -------------------------
-                 * QA
-                 * -------------------------
-                 */
-                stage('Deploy QA') {
-
-                    when {
-                        expression {
-                            return params.DEPLOY_QA
-                        }
-                    }
-
-                    steps {
-                        sh '''
-                            set -e
-
-                            echo "======================================"
-                            echo "       QA DEPLOYMENT STARTED"
-                            echo "======================================"
-
-                            ./deploy/deploy-qa.sh
-
-                            echo "======================================"
-                            echo "       QA DEPLOYMENT COMPLETED"
-                            echo "======================================"
-                        '''
-                    }
-                }
-
-
-                /*
-                 * -------------------------
-                 * STAGING
-                 * -------------------------
-                 */
-                stage('Deploy STAGING') {
-
-                    when {
-                        expression {
-                            return params.DEPLOY_STAGING
-                        }
-                    }
-
-                    steps {
-                        sh '''
-                            set -e
-
-                            echo "======================================"
-                            echo "    STAGING DEPLOYMENT STARTED"
-                            echo "======================================"
-
-                            ./deploy/deploy-staging.sh
-
-                            echo "======================================"
-                            echo "    STAGING DEPLOYMENT COMPLETED"
-                            echo "======================================"
-                        '''
-                    }
-                }
-            }
-        }
-
-
-        /*
-         * =========================================================
-         * 4. VERIFICATION
-         * =========================================================
-         */
-        stage('Verification') {
-
-            when {
-                expression {
-                    return params.RUN_VERIFICATION
-                }
-            }
-
-            steps {
-                echo "======================================"
-                echo "       VERIFICATION STARTED"
-                echo "======================================"
-
-                sh '''
-                    set -e
-
-                    ./scripts/verify.sh
-
-                    echo "======================================"
-                    echo "       VERIFICATION COMPLETED"
-                    echo "======================================"
-                '''
-            }
-        }
-
-
-        /*
-         * =========================================================
-         * 5. DOCKER BUILD & PUSH
-         * =========================================================
-         *
-         * This is intentionally the LAST stage.
-         *
-         * Docker image will only be built and pushed if all
-         * previous stages are successful.
-         */
         stage('Docker Build & Push') {
 
             when {
@@ -259,28 +120,11 @@ pipeline {
 
                 script {
 
-                    /*
-                     * Convert branch name to a Docker-safe value.
-                     *
-                     * Examples:
-                     * dev     -> dev
-                     * qa      -> qa
-                     * staging -> staging
-                     */
                     def safeBranch = env.BRANCH_NAME
                         .toLowerCase()
                         .replaceAll(/[^a-z0-9_.-]/, '-')
 
-                    /*
-                     * Image tag
-                     *
-                     * Example:
-                     * dev-25
-                     * qa-17
-                     * staging-8
-                     */
                     env.IMAGE_TAG = "${safeBranch}-${env.BUILD_NUMBER}"
-
                     env.DOCKER_IMAGE = "${env.DOCKER_REPO}:${env.IMAGE_TAG}"
 
                     echo "======================================"
@@ -292,15 +136,9 @@ pipeline {
                     echo "Docker Repo  : ${env.DOCKER_REPO}"
                     echo "Docker Image : ${env.DOCKER_IMAGE}"
 
-                    /*
-                     * Docker Hub login
-                     *
-                     * Jenkins credential ID:
-                     * dockerhub-credentials
-                     */
                     withCredentials([
                         usernamePassword(
-                            credentialsId: 'dockerhub-credentials',
+                            credentialsId: 'YOUR_DOCKER_CREDENTIAL_ID',
                             usernameVariable: 'DOCKER_USER',
                             passwordVariable: 'DOCKER_PASSWORD'
                         )
@@ -314,6 +152,7 @@ pipeline {
                             echo "--------------------------------------"
 
                             docker --version
+                            docker ps
 
                             echo "--------------------------------------"
                             echo "Logging in to Docker Hub"
@@ -334,7 +173,12 @@ pipeline {
                                 -t "$DOCKER_IMAGE" \
                                 .
 
-                            echo "Docker image created:"
+                            echo "Docker image created successfully."
+
+                            echo "--------------------------------------"
+                            echo "Docker Image"
+                            echo "--------------------------------------"
+
                             docker images "$DOCKER_REPO"
 
                             echo "--------------------------------------"
@@ -347,7 +191,7 @@ pipeline {
                             echo "Docker Image Push Successful"
                             echo "--------------------------------------"
 
-                            echo "Image:"
+                            echo "Image pushed:"
                             echo "$DOCKER_IMAGE"
 
                             echo "--------------------------------------"
@@ -364,34 +208,157 @@ pipeline {
                 }
             }
         }
+
+
+        // ==========================================
+        // DEPLOYMENT
+        // ==========================================
+
+        stage('Deploy') {
+
+            parallel {
+
+                stage('Deploy DEV') {
+
+                    when {
+                        expression {
+                            return params.DEPLOY_DEV
+                        }
+                    }
+
+                    steps {
+
+                        sh '''
+                            set -e
+
+                            echo "======================================"
+                            echo "       DEV DEPLOYMENT STARTED"
+                            echo "======================================"
+
+                            ./deploy/deploy-dev.sh
+
+                            echo "======================================"
+                            echo "       DEV DEPLOYMENT COMPLETED"
+                            echo "======================================"
+                        '''
+                    }
+                }
+
+
+                stage('Deploy QA') {
+
+                    when {
+                        expression {
+                            return params.DEPLOY_QA
+                        }
+                    }
+
+                    steps {
+
+                        sh '''
+                            set -e
+
+                            echo "======================================"
+                            echo "       QA DEPLOYMENT STARTED"
+                            echo "======================================"
+
+                            ./deploy/deploy-qa.sh
+
+                            echo "======================================"
+                            echo "       QA DEPLOYMENT COMPLETED"
+                            echo "======================================"
+                        '''
+                    }
+                }
+
+
+                stage('Deploy STAGING') {
+
+                    when {
+                        expression {
+                            return params.DEPLOY_STAGING
+                        }
+                    }
+
+                    steps {
+
+                        sh '''
+                            set -e
+
+                            echo "======================================"
+                            echo "    STAGING DEPLOYMENT STARTED"
+                            echo "======================================"
+
+                            ./deploy/deploy-staging.sh
+
+                            echo "======================================"
+                            echo "    STAGING DEPLOYMENT COMPLETED"
+                            echo "======================================"
+                        '''
+                    }
+                }
+            }
+        }
+
+
+        // ==========================================
+        // VERIFICATION
+        // ==========================================
+
+        stage('Verification') {
+
+            when {
+                expression {
+                    return params.RUN_VERIFICATION
+                }
+            }
+
+            steps {
+
+                echo "======================================"
+                echo "       VERIFICATION STARTED"
+                echo "======================================"
+
+                sh '''
+                    set -e
+
+                    ./scripts/verify.sh
+
+                    echo "======================================"
+                    echo "       VERIFICATION COMPLETED"
+                    echo "======================================"
+                '''
+            }
+        }
     }
 
 
-    /*
-     * =============================================================
-     * POST ACTIONS
-     * =============================================================
-     */
+    // ==========================================
+    // POST ACTIONS
+    // ==========================================
+
     post {
 
         success {
+
             echo "======================================"
             echo "        PIPELINE SUCCESSFUL"
             echo "======================================"
 
             echo "Branch       : ${env.BRANCH_NAME}"
             echo "Build Number : ${env.BUILD_NUMBER}"
-
             echo "Docker Image : ${env.DOCKER_IMAGE ?: 'Not built'}"
 
-            echo "DEV / QA / STAGING deployment completed."
-            echo "Verification completed."
+            echo "Build completed."
             echo "Docker image build and push completed."
+            echo "Deployment completed."
+            echo "Verification completed."
 
             echo "======================================"
         }
 
         failure {
+
             echo "======================================"
             echo "          PIPELINE FAILED"
             echo "======================================"
@@ -405,7 +372,9 @@ pipeline {
         }
 
         always {
+
             echo "Pipeline execution completed."
         }
     }
 }
+```
