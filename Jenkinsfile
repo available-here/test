@@ -1,104 +1,222 @@
 pipeline {
+
     agent any
 
     parameters {
-        booleanParam(name: 'DEPLOY_DEV', defaultValue: true)
-        booleanParam(name: 'DEPLOY_QA', defaultValue: true)
-        booleanParam(name: 'DEPLOY_STAGING', defaultValue: true)
+
+        booleanParam(
+            name: 'DEPLOY_DEV',
+            defaultValue: true,
+            description: 'Deploy to DEV'
+        )
+
+        booleanParam(
+            name: 'DEPLOY_QA',
+            defaultValue: true,
+            description: 'Deploy to QA'
+        )
+
+        booleanParam(
+            name: 'DEPLOY_STAGING',
+            defaultValue: true,
+            description: 'Deploy to STAGING'
+        )
+
+        booleanParam(
+            name: 'RUN_VERIFICATION',
+            defaultValue: true,
+            description: 'Run deployment verification'
+        )
     }
 
     stages {
 
         stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
 
-        stage('Build') {
             steps {
+
+                echo "======================================"
+                echo "Checking out source code"
+                echo "======================================"
+
+                checkout scm
+
                 sh '''
-                    echo "Building application..."
-                    # mvn clean package
-                    # or npm build
-                    # or your application build command
+                    echo "Current branch:"
+                    git branch --show-current
+
+                    echo "Current commit:"
+                    git rev-parse HEAD
+
+                    echo "Commit message:"
+                    git log -1 --pretty=%B
                 '''
             }
         }
 
+
+        stage('Build') {
+
+            steps {
+
+                echo "======================================"
+                echo "BUILD"
+                echo "======================================"
+
+                sh '''
+                    set -e
+
+                    ./scripts/build.sh
+                '''
+            }
+        }
+
+
         stage('Deploy') {
+
             parallel {
 
                 stage('Deploy DEV') {
+
                     when {
                         expression {
                             return params.DEPLOY_DEV
                         }
                     }
+
                     steps {
-                        echo "Deploying to DEV..."
+
+                        echo "======================================"
+                        echo "DEPLOYING TO DEV"
+                        echo "======================================"
 
                         sh '''
-                            git fetch origin
-                            git checkout dev
-                            git pull origin dev
+                            set -e
 
-                            # DEV deployment commands
-                            # docker compose up -d
-                            # kubectl apply ...
-                            # etc.
+                            chmod +x deploy/deploy-dev.sh
+
+                            ./deploy/deploy-dev.sh
                         '''
                     }
                 }
 
+
                 stage('Deploy QA') {
+
                     when {
                         expression {
                             return params.DEPLOY_QA
                         }
                     }
+
                     steps {
-                        echo "Deploying to QA..."
+
+                        echo "======================================"
+                        echo "DEPLOYING TO QA"
+                        echo "======================================"
 
                         sh '''
-                            git fetch origin
-                            git checkout qa
-                            git pull origin qa
+                            set -e
 
-                            # QA deployment commands
+                            chmod +x deploy/deploy-qa.sh
+
+                            ./deploy/deploy-qa.sh
                         '''
                     }
                 }
 
+
                 stage('Deploy STAGING') {
+
                     when {
                         expression {
                             return params.DEPLOY_STAGING
                         }
                     }
+
                     steps {
-                        echo "Deploying to STAGING..."
+
+                        echo "======================================"
+                        echo "DEPLOYING TO STAGING"
+                        echo "======================================"
 
                         sh '''
-                            git fetch origin
-                            git checkout staging
-                            git pull origin staging
+                            set -e
 
-                            # STAGING deployment commands
+                            chmod +x deploy/deploy-staging.sh
+
+                            ./deploy/deploy-staging.sh
                         '''
                     }
                 }
             }
         }
+
+
+        stage('Verification') {
+
+            when {
+                expression {
+                    return params.RUN_VERIFICATION
+                }
+            }
+
+            steps {
+
+                echo "======================================"
+                echo "VERIFICATION"
+                echo "======================================"
+
+                sh '''
+                    set -e
+
+                    chmod +x scripts/verify.sh
+
+                    ./scripts/verify.sh
+                '''
+            }
+        }
     }
 
+
     post {
+
         success {
-            echo "DEV, QA and STAGING deployment completed successfully."
+
+            echo """
+            ======================================
+            PIPELINE SUCCESSFUL
+            ======================================
+
+            Build       : ${env.BUILD_NUMBER}
+            Job         : ${env.JOB_NAME}
+            Branch      : ${env.BRANCH_NAME}
+
+            DEV         : ${params.DEPLOY_DEV}
+            QA          : ${params.DEPLOY_QA}
+            STAGING     : ${params.DEPLOY_STAGING}
+
+            ======================================
+            """
         }
 
         failure {
-            echo "One or more deployments failed."
+
+            echo """
+            ======================================
+            PIPELINE FAILED
+            ======================================
+
+            Check the failed stage above.
+
+            ======================================
+            """
+        }
+
+        always {
+
+            echo "Jenkins Build Number: ${env.BUILD_NUMBER}"
+            echo "Jenkins Job: ${env.JOB_NAME}"
         }
     }
 }
