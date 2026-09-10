@@ -55,7 +55,7 @@ stages {
 
                 echo ""
                 echo "=============================================="
-                echo "              CHECKOUT COMPLETED"
+                echo "              CHECKOUT COMPLETED		    "
                 echo "=============================================="
             '''
         }
