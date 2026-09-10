@@ -97,6 +97,7 @@ stages {
 
         steps {
             script {
+
                 def branch = env.BRANCH_NAME
 
                 if (!(branch in ['dev', 'qa', 'staging'])) {
@@ -126,6 +127,7 @@ stages {
                         passwordVariable: 'DOCKER_PASSWORD'
                     )
                 ]) {
+
                     sh '''
                         set -e
 
@@ -204,12 +206,15 @@ stages {
     }
 
     stage('Deploy') {
+
         parallel {
 
             stage('Deploy DEV') {
+
                 when {
                     allOf {
                         branch 'dev'
+
                         expression {
                             return params.PUSH_DOCKER
                         }
@@ -217,6 +222,7 @@ stages {
                 }
 
                 steps {
+
                     sh '''
                         set -e
 
@@ -240,9 +246,11 @@ stages {
             }
 
             stage('Deploy QA') {
+
                 when {
                     allOf {
                         branch 'qa'
+
                         expression {
                             return params.PUSH_DOCKER
                         }
@@ -250,6 +258,7 @@ stages {
                 }
 
                 steps {
+
                     sh '''
                         set -e
 
@@ -273,9 +282,11 @@ stages {
             }
 
             stage('Deploy STAGING') {
+
                 when {
                     allOf {
                         branch 'staging'
+
                         expression {
                             return params.PUSH_DOCKER
                         }
@@ -283,6 +294,7 @@ stages {
                 }
 
                 steps {
+
                     sh '''
                         set -e
 
@@ -308,6 +320,7 @@ stages {
     }
 
     stage('Verification') {
+
         when {
             expression {
                 return params.RUN_VERIFICATION
@@ -315,6 +328,7 @@ stages {
         }
 
         steps {
+
             echo "=============================================="
             echo "             VERIFICATION STARTED"
             echo "=============================================="
@@ -336,7 +350,9 @@ stages {
 }
 
 post {
+
     success {
+
         echo "=============================================="
         echo "             PIPELINE SUCCESSFUL"
         echo "=============================================="
@@ -356,6 +372,7 @@ post {
     }
 
     failure {
+
         echo "=============================================="
         echo "               PIPELINE FAILED"
         echo "=============================================="
@@ -371,6 +388,7 @@ post {
     }
 
     always {
+
         echo "Pipeline execution completed."
     }
 }
