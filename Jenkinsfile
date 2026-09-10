@@ -1,124 +1,193 @@
 pipeline {
-agent any
+    agent any
 
-```
-options {
-    skipDefaultCheckout(true)
-    timestamps()
-}
-
-parameters {
-    booleanParam(
-        name: 'PUSH_DOCKER',
-        defaultValue: true,
-        description: 'Build and push Docker image to Docker Hub'
-    )
-
-    booleanParam(
-        name: 'RUN_VERIFICATION',
-        defaultValue: true,
-        description: 'Run deployment verification'
-    )
-}
-
-environment {
-    DOCKER_REPO = 'mstr6789/git_push'
-}
-
-stages {
-
-    stage('Checkout') {
-        steps {
-            echo "=============================================="
-            echo "              CHECKOUT STARTED"
-            echo "=============================================="
-
-            checkout scm
-
-            sh '''
-                set -e
-
-                echo "Branch:"
-                echo "${BRANCH_NAME}"
-
-                echo ""
-                echo "Git branch:"
-                git branch --show-current
-
-                echo ""
-                echo "Git commit:"
-                git rev-parse HEAD
-
-                echo ""
-                echo "Commit message:"
-                git log -1 --pretty=%B
-
-                echo ""
-                echo "=============================================="
-                echo "              CHECKOUT COMPLETED		    "
-                echo "=============================================="
-            '''
-        }
+    options {
+        skipDefaultCheckout(true)
+        timestamps()
+        disableConcurrentBuilds()
     }
 
-    stage('Build') {
-        steps {
-            echo "=============================================="
-            echo "                BUILD STARTED"
-            echo "=============================================="
-
-            sh '''
-                set -e
-
-                echo "Running application build..."
-
-                chmod +x scripts/build.sh
-
-                ./scripts/build.sh
-
-                echo ""
-                echo "Build directory:"
-                ls -lah build/
-
-                echo ""
-                echo "=============================================="
-                echo "                BUILD COMPLETED"
-                echo "=============================================="
-            '''
-        }
+    environment {
+        DOCKER_REPO = 'mstr6789/git_push'
     }
 
-    stage('Docker Build & Push') {
-        when {
-            expression {
-                return params.PUSH_DOCKER
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo '=================================================='
+                echo '                  CHECKOUT'
+                echo '=================================================='
+
+                checkout scm
+
+                sh '''
+                    set -e
+
+                    echo "Workspace:"
+                    pwd
+
+                    echo ""
+                    echo "Branch:"
+                    echo "${BRANCH_NAME}"
+
+                    echo ""
+                    echo "Git branch:"
+                    git branch --show-current
+
+                    echo ""
+                    echo "Git commit:"
+                    git rev-parse HEAD
+
+                    echo ""
+                    echo "Commit:"
+                    git log -1 --oneline
+
+                    echo ""
+                    echo "Jenkins build:"
+                    echo "${BUILD_NUMBER}"
+
+                    echo ""
+                    echo "Checking required files..."
+
+                    test -f Jenkinsfile
+                    test -f Dockerfile
+                    test -f scripts/build.sh
+                    test -f scripts/verify.sh
+
+                    echo "Required files found."
+
+                    echo ""
+                    echo "Checkout completed successfully."
+                '''
             }
         }
 
-        steps {
-            script {
+        stage('Validate Branch') {
+            steps {
+                script {
+                    def branch = env.BRANCH_NAME
 
-                def branch = env.BRANCH_NAME
+                    if (!(branch in ['dev', 'qa', 'staging'])) {
+                        error(
+                            "Unsupported branch: ${env.BRANCH_NAME}. " +
+                            "Allowed branches are: dev, qa, staging."
+                        )
+                    }
 
-                if (!(branch in ['dev', 'qa', 'staging'])) {
-                    error(
-                        "Unsupported branch '${branch}'. " +
-                        "Only dev, qa and staging branches are allowed."
-                    )
+                    env.IMAGE_TAG = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}"
+                    env.DOCKER_IMAGE = "${env.DOCKER_REPO}:${env.IMAGE_TAG}"
+
+                    echo '=================================================='
+                    echo '                BRANCH VALIDATION'
+                    echo '=================================================='
+
+                    echo "Branch       : ${env.BRANCH_NAME}"
+                    echo "Build Number : ${env.BUILD_NUMBER}"
+                    echo "Docker Repo  : ${env.DOCKER_REPO}"
+                    echo "Docker Tag   : ${env.IMAGE_TAG}"
+                    echo "Docker Image : ${env.DOCKER_IMAGE}"
+
+                    echo ""
+                    echo "Branch validation successful."
                 }
+            }
+        }
 
-                env.IMAGE_TAG = "${branch}-${env.BUILD_NUMBER}"
-                env.DOCKER_IMAGE = "${env.DOCKER_REPO}:${env.IMAGE_TAG}"
+        stage('Application Build') {
+            steps {
+                echo '=================================================='
+                echo '              APPLICATION BUILD'
+                echo '=================================================='
 
-                echo "=============================================="
-                echo "           DOCKER BUILD & PUSH"
-                echo "=============================================="
+                sh '''
+                    set -e
 
-                echo "Branch       : ${env.BRANCH_NAME}"
-                echo "Build Number : ${env.BUILD_NUMBER}"
-                echo "Docker Repo  : ${env.DOCKER_REPO}"
-                echo "Docker Tag   : ${env.IMAGE_TAG}"
-                echo "Docker Image : ${env.DOCKER_IMAGE}"
+                    echo "Starting application build..."
+
+                    chmod +x scripts/build.sh
+
+                    ./scripts/build.sh
+
+                    echo ""
+                    echo "Checking build output..."
+
+                    if [ ! -d "build" ]; then
+                        echo "ERROR: build directory was not created."
+                        exit 1
+                    fi
+
+                    echo ""
+                    echo "Build directory:"
+                    ls -lah build/
+
+                    echo ""
+                    echo "Application build completed successfully."
+                '''
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                echo '=================================================='
+                echo '                 DOCKER BUILD'
+                echo '=================================================='
+
+                sh '''
+                    set -e
+
+                    echo "Docker version:"
+                    docker --version
+
+                    echo ""
+                    echo "Docker image:"
+                    echo "${DOCKER_IMAGE}"
+
+                    echo ""
+                    echo "Checking Dockerfile..."
+
+                    if [ ! -f "Dockerfile" ]; then
+                        echo "ERROR: Dockerfile not found."
+                        exit 1
+                    fi
+
+                    echo "Dockerfile found."
+
+                    echo ""
+                    echo "Starting Docker image build..."
+
+                    docker build \
+                        --pull \
+                        --tag "${DOCKER_IMAGE}" \
+                        .
+
+                    echo ""
+                    echo "Docker image build completed successfully."
+
+                    echo ""
+                    echo "Docker image details:"
+
+                    docker image inspect "${DOCKER_IMAGE}" \
+                        --format='Repository: {{.RepoTags}}'
+
+                    docker image inspect "${DOCKER_IMAGE}" \
+                        --format='Image ID: {{.Id}}'
+
+                    docker image inspect "${DOCKER_IMAGE}" \
+                        --format='Created: {{.Created}}'
+
+                    echo ""
+                    echo "Local Docker images:"
+                    docker images "${DOCKER_REPO}"
+                '''
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                echo '=================================================='
+                echo '                  DOCKER PUSH'
+                echo '=================================================='
 
                 withCredentials([
                     usernamePassword(
@@ -127,271 +196,167 @@ stages {
                         passwordVariable: 'DOCKER_PASSWORD'
                     )
                 ]) {
-
                     sh '''
                         set -e
 
-                        echo ""
-                        echo "----------------------------------------------"
-                        echo "Checking Docker"
-                        echo "----------------------------------------------"
+                        echo "Logging in to Docker Hub..."
 
-                        docker --version
-                        docker info
-
-                        echo ""
-                        echo "----------------------------------------------"
-                        echo "Logging in to Docker Hub"
-                        echo "----------------------------------------------"
-
-                        echo "$DOCKER_PASSWORD" | \
+                        echo "${DOCKER_PASSWORD}" | \
                             docker login \
-                            --username "$DOCKER_USER" \
+                            --username "${DOCKER_USER}" \
                             --password-stdin
 
+                        echo ""
                         echo "Docker Hub login successful."
 
                         echo ""
-                        echo "----------------------------------------------"
-                        echo "Building Docker Image"
-                        echo "----------------------------------------------"
+                        echo "Pushing image:"
+                        echo "${DOCKER_IMAGE}"
 
-                        docker build \
-                            --pull \
-                            -t "$DOCKER_IMAGE" \
-                            .
+                        docker push "${DOCKER_IMAGE}"
 
                         echo ""
-                        echo "Docker image created successfully."
+                        echo "Docker image pushed successfully."
 
                         echo ""
-                        echo "----------------------------------------------"
-                        echo "Docker Image Details"
-                        echo "----------------------------------------------"
-
-                        docker image inspect "$DOCKER_IMAGE" \
-                            --format='Image: {{.RepoTags}}'
-
-                        docker images "$DOCKER_REPO"
+                        echo "Image:"
+                        echo "${DOCKER_IMAGE}"
 
                         echo ""
-                        echo "----------------------------------------------"
-                        echo "Pushing Docker Image to Docker Hub"
-                        echo "----------------------------------------------"
-
-                        docker push "$DOCKER_IMAGE"
-
-                        echo ""
-                        echo "Docker image push successful."
-
-                        echo ""
-                        echo "Image pushed:"
-                        echo "$DOCKER_IMAGE"
-
-                        echo ""
-                        echo "----------------------------------------------"
-                        echo "Logging out from Docker Hub"
-                        echo "----------------------------------------------"
+                        echo "Logging out from Docker Hub..."
 
                         docker logout
 
                         echo ""
-                        echo "=============================================="
-                        echo "       DOCKER BUILD & PUSH COMPLETED"
-                        echo "=============================================="
+                        echo "Docker push completed successfully."
                     '''
                 }
             }
         }
-    }
 
-    stage('Deploy') {
+        stage('Deploy') {
+            steps {
+                script {
+                    echo '=================================================='
+                    echo '                    DEPLOY'
+                    echo '=================================================='
 
-        parallel {
+                    echo "Branch       : ${env.BRANCH_NAME}"
+                    echo "Docker Image : ${env.DOCKER_IMAGE}"
 
-            stage('Deploy DEV') {
+                    if (env.BRANCH_NAME == 'dev') {
+                        echo ""
+                        echo "Starting DEV deployment..."
 
-                when {
-                    allOf {
-                        branch 'dev'
-
-                        expression {
-                            return params.PUSH_DOCKER
-                        }
-                    }
-                }
-
-                steps {
-
-                    sh '''
-                        set -e
-
-                        echo "=============================================="
-                        echo "             DEV DEPLOYMENT"
-                        echo "=============================================="
-
-                        echo "Branch       : ${BRANCH_NAME}"
-                        echo "Docker Image : ${DOCKER_IMAGE}"
-
-                        chmod +x deploy/deploy-dev.sh
-
-                        ./deploy/deploy-dev.sh
+                        sh '''
+                            set -e
+                            chmod +x deploy/deploy-dev.sh
+                            ./deploy/deploy-dev.sh
+                        '''
 
                         echo ""
-                        echo "=============================================="
-                        echo "          DEV DEPLOYMENT COMPLETED"
-                        echo "=============================================="
-                    '''
-                }
-            }
+                        echo "DEV deployment completed successfully."
 
-            stage('Deploy QA') {
+                    } else if (env.BRANCH_NAME == 'qa') {
+                        echo ""
+                        echo "Starting QA deployment..."
 
-                when {
-                    allOf {
-                        branch 'qa'
-
-                        expression {
-                            return params.PUSH_DOCKER
-                        }
-                    }
-                }
-
-                steps {
-
-                    sh '''
-                        set -e
-
-                        echo "=============================================="
-                        echo "              QA DEPLOYMENT"
-                        echo "=============================================="
-
-                        echo "Branch       : ${BRANCH_NAME}"
-                        echo "Docker Image : ${DOCKER_IMAGE}"
-
-                        chmod +x deploy/deploy-qa.sh
-
-                        ./deploy/deploy-qa.sh
+                        sh '''
+                            set -e
+                            chmod +x deploy/deploy-qa.sh
+                            ./deploy/deploy-qa.sh
+                        '''
 
                         echo ""
-                        echo "=============================================="
-                        echo "           QA DEPLOYMENT COMPLETED"
-                        echo "=============================================="
-                    '''
-                }
-            }
+                        echo "QA deployment completed successfully."
 
-            stage('Deploy STAGING') {
+                    } else if (env.BRANCH_NAME == 'staging') {
+                        echo ""
+                        echo "Starting STAGING deployment..."
 
-                when {
-                    allOf {
-                        branch 'staging'
-
-                        expression {
-                            return params.PUSH_DOCKER
-                        }
-                    }
-                }
-
-                steps {
-
-                    sh '''
-                        set -e
-
-                        echo "=============================================="
-                        echo "           STAGING DEPLOYMENT"
-                        echo "=============================================="
-
-                        echo "Branch       : ${BRANCH_NAME}"
-                        echo "Docker Image : ${DOCKER_IMAGE}"
-
-                        chmod +x deploy/deploy-staging.sh
-
-                        ./deploy/deploy-staging.sh
+                        sh '''
+                            set -e
+                            chmod +x deploy/deploy-staging.sh
+                            ./deploy/deploy-staging.sh
+                        '''
 
                         echo ""
-                        echo "=============================================="
-                        echo "        STAGING DEPLOYMENT COMPLETED"
-                        echo "=============================================="
-                    '''
+                        echo "STAGING deployment completed successfully."
+
+                    } else {
+                        error("Deployment blocked. Unsupported branch: ${env.BRANCH_NAME}")
+                    }
                 }
             }
         }
-    }
 
-    stage('Verification') {
+        stage('Verification') {
+            steps {
+                echo '=================================================='
+                echo '                 VERIFICATION'
+                echo '=================================================='
 
-        when {
-            expression {
-                return params.RUN_VERIFICATION
+                sh '''
+                    set -e
+
+                    chmod +x scripts/verify.sh
+
+                    ./scripts/verify.sh
+
+                    echo ""
+                    echo "Verification completed successfully."
+                '''
             }
         }
+    }
 
-        steps {
+    post {
+        success {
+            echo '=================================================='
+            echo '             PIPELINE SUCCESSFUL'
+            echo '=================================================='
 
-            echo "=============================================="
-            echo "             VERIFICATION STARTED"
-            echo "=============================================="
+            echo "Branch       : ${env.BRANCH_NAME}"
+            echo "Build Number : ${env.BUILD_NUMBER}"
+            echo "Docker Image : ${env.DOCKER_IMAGE}"
 
-            sh '''
-                set -e
+            echo ""
+            echo "Application build : SUCCESS"
+            echo "Docker build      : SUCCESS"
+            echo "Docker push       : SUCCESS"
+            echo "Deployment        : SUCCESS"
+            echo "Verification      : SUCCESS"
 
-                chmod +x scripts/verify.sh
+            echo ""
+            echo "Complete pipeline finished successfully."
 
-                ./scripts/verify.sh
+            echo '=================================================='
+        }
 
-                echo ""
-                echo "=============================================="
-                echo "          VERIFICATION COMPLETED"
-                echo "=============================================="
-            '''
+        failure {
+            echo '=================================================='
+            echo '               PIPELINE FAILED'
+            echo '=================================================='
+
+            echo "Branch       : ${env.BRANCH_NAME}"
+            echo "Build Number : ${env.BUILD_NUMBER}"
+            echo "Docker Image : ${env.DOCKER_IMAGE ?: 'Not created'}"
+
+            echo ""
+            echo "Pipeline failed."
+            echo "Check the Jenkins console log for the failed stage."
+
+            echo '=================================================='
+        }
+
+        aborted {
+            echo '=================================================='
+            echo '              PIPELINE ABORTED'
+            echo '=================================================='
+        }
+
+        always {
+            echo "Pipeline execution completed."
         }
     }
-}
-
-post {
-
-    success {
-
-        echo "=============================================="
-        echo "             PIPELINE SUCCESSFUL"
-        echo "=============================================="
-
-        echo "Branch       : ${env.BRANCH_NAME}"
-        echo "Build Number : ${env.BUILD_NUMBER}"
-        echo "Docker Image : ${env.DOCKER_IMAGE ?: 'Not built'}"
-
-        echo ""
-        echo "Build completed successfully."
-        echo "Docker image build and push completed."
-        echo "Environment deployment completed."
-        echo "Verification completed successfully."
-
-        echo ""
-        echo "=============================================="
-    }
-
-    failure {
-
-        echo "=============================================="
-        echo "               PIPELINE FAILED"
-        echo "=============================================="
-
-        echo "Branch       : ${env.BRANCH_NAME}"
-        echo "Build Number : ${env.BUILD_NUMBER}"
-
-        echo ""
-        echo "Please check the failed stage and Jenkins console log."
-
-        echo ""
-        echo "=============================================="
-    }
-
-    always {
-
-        echo "Pipeline execution completed."
-    }
-}
-```
-
 }
