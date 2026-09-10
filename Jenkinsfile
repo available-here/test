@@ -8,7 +8,6 @@ options {
 }
 
 parameters {
-
     booleanParam(
         name: 'PUSH_DOCKER',
         defaultValue: true,
@@ -28,13 +27,8 @@ environment {
 
 stages {
 
-    // ============================================================
-    // CHECKOUT
-    // ============================================================
-
     stage('Checkout') {
         steps {
-
             echo "=============================================="
             echo "              CHECKOUT STARTED"
             echo "=============================================="
@@ -67,14 +61,8 @@ stages {
         }
     }
 
-
-    // ============================================================
-    // BUILD
-    // ============================================================
-
     stage('Build') {
         steps {
-
             echo "=============================================="
             echo "                BUILD STARTED"
             echo "=============================================="
@@ -100,13 +88,7 @@ stages {
         }
     }
 
-
-    // ============================================================
-    // DOCKER BUILD & PUSH
-    // ============================================================
-
     stage('Docker Build & Push') {
-
         when {
             expression {
                 return params.PUSH_DOCKER
@@ -114,13 +96,7 @@ stages {
         }
 
         steps {
-
             script {
-
-                // ------------------------------------------------
-                // Validate branch
-                // ------------------------------------------------
-
                 def branch = env.BRANCH_NAME
 
                 if (!(branch in ['dev', 'qa', 'staging'])) {
@@ -129,10 +105,6 @@ stages {
                         "Only dev, qa and staging branches are allowed."
                     )
                 }
-
-                // ------------------------------------------------
-                // Create branch-specific Docker image tag
-                // ------------------------------------------------
 
                 env.IMAGE_TAG = "${branch}-${env.BUILD_NUMBER}"
                 env.DOCKER_IMAGE = "${env.DOCKER_REPO}:${env.IMAGE_TAG}"
@@ -147,10 +119,6 @@ stages {
                 echo "Docker Tag   : ${env.IMAGE_TAG}"
                 echo "Docker Image : ${env.DOCKER_IMAGE}"
 
-                // ------------------------------------------------
-                // Docker Hub authentication
-                // ------------------------------------------------
-
                 withCredentials([
                     usernamePassword(
                         credentialsId: 'YOUR_DOCKER_CREDENTIAL_ID',
@@ -158,7 +126,6 @@ stages {
                         passwordVariable: 'DOCKER_PASSWORD'
                     )
                 ]) {
-
                     sh '''
                         set -e
 
@@ -236,25 +203,13 @@ stages {
         }
     }
 
-
-    // ============================================================
-    // DEPLOYMENT
-    // ============================================================
-
     stage('Deploy') {
-
         parallel {
 
-            // ====================================================
-            // DEV
-            // ====================================================
-
             stage('Deploy DEV') {
-
                 when {
                     allOf {
                         branch 'dev'
-
                         expression {
                             return params.PUSH_DOCKER
                         }
@@ -262,7 +217,6 @@ stages {
                 }
 
                 steps {
-
                     sh '''
                         set -e
 
@@ -285,17 +239,10 @@ stages {
                 }
             }
 
-
-            // ====================================================
-            // QA
-            // ====================================================
-
             stage('Deploy QA') {
-
                 when {
                     allOf {
                         branch 'qa'
-
                         expression {
                             return params.PUSH_DOCKER
                         }
@@ -303,7 +250,6 @@ stages {
                 }
 
                 steps {
-
                     sh '''
                         set -e
 
@@ -326,17 +272,10 @@ stages {
                 }
             }
 
-
-            // ====================================================
-            // STAGING
-            // ====================================================
-
             stage('Deploy STAGING') {
-
                 when {
                     allOf {
                         branch 'staging'
-
                         expression {
                             return params.PUSH_DOCKER
                         }
@@ -344,7 +283,6 @@ stages {
                 }
 
                 steps {
-
                     sh '''
                         set -e
 
@@ -369,13 +307,7 @@ stages {
         }
     }
 
-
-    // ============================================================
-    // VERIFICATION
-    // ============================================================
-
     stage('Verification') {
-
         when {
             expression {
                 return params.RUN_VERIFICATION
@@ -383,7 +315,6 @@ stages {
         }
 
         steps {
-
             echo "=============================================="
             echo "             VERIFICATION STARTED"
             echo "=============================================="
@@ -404,15 +335,8 @@ stages {
     }
 }
 
-
-// ================================================================
-// POST ACTIONS
-// ================================================================
-
 post {
-
     success {
-
         echo "=============================================="
         echo "             PIPELINE SUCCESSFUL"
         echo "=============================================="
@@ -431,9 +355,7 @@ post {
         echo "=============================================="
     }
 
-
     failure {
-
         echo "=============================================="
         echo "               PIPELINE FAILED"
         echo "=============================================="
@@ -448,11 +370,8 @@ post {
         echo "=============================================="
     }
 
-
     always {
-
         echo "Pipeline execution completed."
-
     }
 }
 ```
